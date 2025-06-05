@@ -77,6 +77,9 @@ class Options(Namespace):
         # Whether or not to add skip connections to the initial set of embedding layers.
         self.initial_embedding_skip_connections: bool = True
 
+        # Whether to use a sinekan in place of last FF (SKANFormer)
+        self.sinekan: bool = False
+
         # Structure for linear layers in the network
         #
         # Options are:
