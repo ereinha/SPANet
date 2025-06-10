@@ -9,6 +9,7 @@ from spanet.network.layers.transformer.transformer_base import TransformerBase
 class GTrXL(nn.Module):
     def __init__(self, options, hidden_dim: int, num_heads: int, dropout: float, sinekan: bool=False):
         super(GTrXL, self).__init__()
+
         self.sinekan = sinekan
         self.attention_norm = nn.LayerNorm(hidden_dim)
         self.attention_gate = GRUGate(hidden_dim)

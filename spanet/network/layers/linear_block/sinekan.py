@@ -55,7 +55,7 @@ class SineKAN(torch.nn.Module):
     def __init__(
         self,
         layers_hidden: List[int],
-        grid_size: int = 8,
+        grid_size: int = 9,
         device: str = 'cuda',
     ) -> None:
         super().__init__()
