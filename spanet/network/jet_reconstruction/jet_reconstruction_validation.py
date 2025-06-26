@@ -53,6 +53,7 @@ class JetReconstructionValidation(JetReconstructionNetwork):
         max_jet_accuracies = all_jet_accs_array.max(axis=0)
         
         max_jet_accuracies = max_jet_accuracies.sum(1)
+
         particle_accuracies = particle_accuracies.sum(1)
 
         # Select the primary permutation which we will use for all other metrics.
@@ -101,7 +102,7 @@ class JetReconstructionValidation(JetReconstructionNetwork):
 
         # Stack all of the targets into single array, we will also move to numpy for easier the numba computations.
         stacked_targets = np.zeros(num_targets, dtype=object)
-        stacked_masks = np.zeros((num_targets, batch_size), dtype=np.bool)
+        stacked_masks = np.zeros((num_targets, batch_size), dtype=bool)
         for i, (target, mask) in enumerate(targets):
             stacked_targets[i] = target.detach().cpu().numpy()
             stacked_masks[i] = mask.detach().cpu().numpy()
