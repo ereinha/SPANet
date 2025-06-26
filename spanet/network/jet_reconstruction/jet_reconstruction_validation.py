@@ -41,8 +41,8 @@ class JetReconstructionValidation(JetReconstructionNetwork):
         # First compute raw_old accuracy so that we can get an accuracy score for each event
         # This will also act as the method for choosing the best permutation to compare for the other metrics.
         all_jet_accs = []
-        jet_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=np.bool)
-        particle_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=np.bool)
+        jet_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=bool)
+        particle_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=bool)
         for pred_idx in range(jet_predictions[0].shape[-1]):
             for i, permutation in enumerate(event_permutation_group):
                 for j, (prediction, target) in enumerate(zip(jet_predictions, stacked_targets[permutation])):
