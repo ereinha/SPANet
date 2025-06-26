@@ -229,9 +229,12 @@ def main(
     lines: int,
     gpu: bool,
     fp16: bool,
-    latex: bool
+    latex: bool,
+    top_k: int,
 ):
     model = load_model(log_directory, test_file, event_file, batch_size, gpu, fp16=fp16)
+    if top_k is not None:
+        model.options.k = top_k
     evaluation = evaluate_on_test_dataset(model, fp16=fp16)
 
     # Flatten predictions
@@ -275,6 +278,9 @@ if __name__ == '__main__':
 
     parser.add_argument("-tex", "--latex", action="store_true",
                         help="Output a latex table.")
+    
+    parser.add_argument("-k", "--top_k", type=int, default=None,
+                        help="k value override in Top-k inference")
 
     arguments = parser.parse_args()
     main(**arguments.__dict__)

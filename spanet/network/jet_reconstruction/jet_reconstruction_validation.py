@@ -1,5 +1,4 @@
 from typing import Dict, Callable
-import warnings
 
 import numpy as np
 import torch
@@ -41,38 +40,40 @@ class JetReconstructionValidation(JetReconstructionNetwork):
         # Compute all possible target permutations and take the best performing permutation
         # First compute raw_old accuracy so that we can get an accuracy score for each event
         # This will also act as the method for choosing the best permutation to compare for the other metrics.
-        jet_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=bool)
-        particle_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=bool)
-        for i, permutation in enumerate(event_permutation_group):
-            for j, (prediction, target) in enumerate(zip(jet_predictions, stacked_targets[permutation])):
-                jet_accuracies[i, j] = np.all(prediction == target, axis=1)
-
-            particle_accuracies[i] = stacked_masks[permutation] == particle_predictions
-
-        jet_accuracies = jet_accuracies.sum(1)
+        all_jet_accs = []
+        jet_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=np.bool)
+        particle_accuracies = np.zeros((num_permutations, num_targets, batch_size), dtype=np.bool)
+        for pred_idx in range(jet_predictions[0].shape[-1]):
+            for i, permutation in enumerate(event_permutation_group):
+                for j, (prediction, target) in enumerate(zip(jet_predictions, stacked_targets[permutation])):
+                        jet_accuracies[i, j] = np.all(prediction[..., pred_idx] == target, axis=1)
+                particle_accuracies[i] = stacked_masks[permutation] == particle_predictions
+            all_jet_accs.append(jet_accuracies.copy())
+        all_jet_accs_array = np.stack(all_jet_accs, axis=0)  # Shape: (NUM_PREDICTIONS, num_permutations, num_targets, batch_size)
+        max_jet_accuracies = all_jet_accs_array.max(axis=0)
+        
+        max_jet_accuracies = max_jet_accuracies.sum(1)
         particle_accuracies = particle_accuracies.sum(1)
 
         # Select the primary permutation which we will use for all other metrics.
-        chosen_permutations = self.event_permutation_tensor[jet_accuracies.argmax(0)].T
+        chosen_permutations = self.event_permutation_tensor[max_jet_accuracies.argmax(0)].T
         chosen_permutations = chosen_permutations.cpu()
+
         permuted_masks = torch.gather(torch.from_numpy(stacked_masks), 0, chosen_permutations).numpy()
 
         # Compute final accuracy vectors for output
         num_particles = stacked_masks.sum(0)
-        jet_accuracies = jet_accuracies.max(0)
+        max_jet_accuracies = max_jet_accuracies.max(0)
         particle_accuracies = particle_accuracies.max(0)
 
         # Create the logging dictionaries
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-    
-            metrics = {f"jet/accuracy_{i}_of_{j}": (jet_accuracies[num_particles == j] >= i).mean()
-                    for j in range(1, num_targets + 1)
-                    for i in range(1, j + 1)}
+        metrics = {f"jet/accuracy_{i}_of_{j}": (max_jet_accuracies[num_particles == j] >= i).mean()
+                   for j in range(1, num_targets + 1)
+                   for i in range(1, j + 1)}
 
-            metrics.update({f"particle/accuracy_{i}_of_{j}": (particle_accuracies[num_particles == j] >= i).mean()
-                            for j in range(1, num_targets + 1)
-                            for i in range(1, j + 1)})
+        metrics.update({f"particle/accuracy_{i}_of_{j}": (particle_accuracies[num_particles == j] >= i).mean()
+                        for j in range(1, num_targets + 1)
+                        for i in range(1, j + 1)})
 
         particle_scores = particle_scores.ravel()
         particle_targets = permuted_masks.ravel()
@@ -100,7 +101,7 @@ class JetReconstructionValidation(JetReconstructionNetwork):
 
         # Stack all of the targets into single array, we will also move to numpy for easier the numba computations.
         stacked_targets = np.zeros(num_targets, dtype=object)
-        stacked_masks = np.zeros((num_targets, batch_size), dtype=bool)
+        stacked_masks = np.zeros((num_targets, batch_size), dtype=np.bool)
         for i, (target, mask) in enumerate(targets):
             stacked_targets[i] = target.detach().cpu().numpy()
             stacked_masks[i] = mask.detach().cpu().numpy()

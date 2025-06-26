@@ -126,7 +126,9 @@ class JetReconstructionNetwork(JetReconstructionBase):
             assignments = extract_predictions([
                 np.nan_to_num(assignment.detach().cpu().numpy(), -np.inf)
                 for assignment in outputs.assignments
-            ])
+            ],
+            k=self.options.k,
+            )
 
             # Convert detection logits into probabilities and move to CPU.
             detections = np.stack([

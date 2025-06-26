@@ -183,6 +183,9 @@ class Options(Namespace):
         # Number of processes to spawn for data collection.
         self.num_dataloader_workers: int = 4
 
+        # k value for Top-k prediction selection
+        self.k: int = 1
+
         # =========================================================================================
         # Training Options
         # =========================================================================================
