@@ -69,7 +69,6 @@ def load_model(
     event_info_file: Optional[str] = None,
     batch_size: Optional[int] = None,
     cuda: bool = False,
-    fp16: bool = False,
     checkpoint: Optional[str] = None
 ) -> JetReconstructionModel:
     # Load the best-performing checkpoint on validation data
@@ -79,8 +78,6 @@ def load_model(
 
     checkpoint = torch.load(checkpoint, map_location='cpu')
     checkpoint = checkpoint["state_dict"]
-    if fp16:
-        checkpoint = tree_map(lambda x: x.half(), checkpoint)
 
     # Load the options that were used for this run and set the testing-dataset value
     options = Options.load(f"{log_directory}/options.json")
@@ -111,8 +108,7 @@ def load_model(
 def evaluate_on_test_dataset(
         model: JetReconstructionModel,
         progress=progress,
-        return_full_output: bool = False,
-        fp16: bool = False
+        return_full_output: bool = False
 ) -> Union[Evaluation, Tuple[Evaluation, Outputs]]:
     full_assignments = defaultdict(list)
     full_assignment_probabilities = defaultdict(list)
@@ -130,9 +126,7 @@ def evaluate_on_test_dataset(
     timer = Timer()
     for batch in dataloader:
         sources = tuple(Source(x[0].to(model.device), x[1].to(model.device)) for x in batch.sources)
-
-        with torch.cuda.amp.autocast(enabled=fp16):
-            outputs = model.forward(sources)
+        outputs = model.forward(sources)
 
         timer.start()
         assignment_indices = extract_predictions([
@@ -157,15 +151,16 @@ def evaluate_on_test_dataset(
         }
 
         assignment_probabilities = []
-        dummy_index = torch.arange(assignment_indices[0].shape[0])
         for assignment_probability, assignment, symmetries in zip(
             outputs.assignments,
             assignment_indices,
             model.event_info.product_symbolic_groups.values()
         ):
+            batch_size = assignment.shape[0]
+            dummy_index = torch.arange(batch_size).unsqueeze(-1).repeat(1, assignment.shape[-1])
             # Get the probability of the best assignment.
             # Have to use explicit function call here to construct index dynamically.
-            assignment_probability = assignment_probability.__getitem__((dummy_index, *assignment.T))
+            assignment_probability = assignment_probability.__getitem__((dummy_index, *assignment.transpose(1, 0, 2)))
 
             # Convert from log-probability to probability.
             assignment_probability = torch.exp(assignment_probability)
@@ -204,4 +199,3 @@ def evaluate_on_test_dataset(
         return evaluation, tree_concatenate(full_outputs)
 
     return evaluation
-
