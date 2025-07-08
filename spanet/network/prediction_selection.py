@@ -250,7 +250,7 @@ def extract_predictions(predictions: List[TArray], k: int):
     batch_size = max(p.shape[0] for p in predictions)
     n_targets  = len(predictions)
 
-    results = np.full((n_targets, batch_size, max_partons, k),
+    results = np.full((n_targets, batch_size, k, max_partons),
                       -1, dtype=np.int64)
     weights = np.full((n_targets, batch_size, k),
                       -np.float32(np.inf), dtype=np.float32)
@@ -258,7 +258,6 @@ def extract_predictions(predictions: List[TArray], k: int):
     work_preds = [p.astype(np.float32, copy=True) for p in predictions]
 
     for top_idx in range(k):
-
         flat_pred_list = numba.typed.List(
             [p.reshape((p.shape[0], -1)) for p in work_preds]
         )
@@ -266,17 +265,21 @@ def extract_predictions(predictions: List[TArray], k: int):
             flat_pred_list, num_partons, max_jets, batch_size
         )
 
-        results[:, :, :, top_idx] = assign
-        weights[:, :,    top_idx] = score
+        # store one assignment set at position top_idx
+        results[:, :, top_idx, :] = assign
+        weights[:, :,  top_idx]   = score
 
-        for t in range(n_targets): # target index
-            for b in range(batch_size): # batch index
-                for p_idx in range(num_partons[t]): # parton index
+        # mask out the jets that were just used
+        for t in range(n_targets):                # target
+            for b in range(batch_size):           # batch
+                for p_idx in range(num_partons[t]):   # parton
                     jet = int(assign[t, b, p_idx])
-                    if jet >= 0: # only mask valid assignments
-                        for s in range(n_targets): # mask in all targets
+                    if jet >= 0:
+                        for s in range(n_targets):     # mask in all targets
                             mask_jet(work_preds[s][b].ravel(),
                                      num_partons[s], max_jets,
                                      jet, -np.float32(np.inf))
 
-    return [res[:, :partons] for res, partons in zip(results, num_partons)]
+    # return: list length = n_targets;
+    # each item is (batch_size, k, partons_for_this_target)
+    return [res[:, :, :partons] for res, partons in zip(results, num_partons)]
