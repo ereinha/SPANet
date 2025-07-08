@@ -282,4 +282,4 @@ def extract_predictions(predictions: List[TArray], k: int):
 
     # return: list length = n_targets;
     # each item is (batch_size, k, partons_for_this_target)
-    return [res[:, :, :partons] for res, partons in zip(results, num_partons)]
+    return [res[:, :, :partons].swapaxes(1,2) for res, partons in zip(results, num_partons)]
