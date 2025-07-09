@@ -243,21 +243,44 @@ def find_max_and_mask(matrix):
     
     return new_matrix, i, j, k
 
+
+def _k_best_combinations(logw: np.ndarray, k: int):
+    n_targets, k_local = logw.shape
+
+    score = logw[0].copy()
+    for t in range(1, n_targets):
+        score = score[..., None] + logw[t]
+
+    flat = score.ravel()
+    if flat.size <= k:
+        best_idx_flat = np.arange(flat.size)
+    else:
+        best_idx_flat = np.argpartition(-flat, k-1)[:k]
+
+    best_idx_flat = best_idx_flat[np.argsort(-flat[best_idx_flat])]
+    best_scores   = flat[best_idx_flat]
+    best_tuples   = np.column_stack(
+        np.unravel_index(best_idx_flat, score.shape)
+    )
+
+    return best_tuples, best_scores
+
+
 def extract_predictions(predictions: List[TArray], k: int):
     num_partons = np.array([p.ndim - 1 for p in predictions], dtype=np.int64)
     max_partons = num_partons.max()
-    max_jets   = max(max(p.shape[1:]) for p in predictions)
-    batch_size = max(p.shape[0] for p in predictions)
-    n_targets  = len(predictions)
+    max_jets    = max(max(p.shape[1:]) for p in predictions)
+    batch_size  = max(p.shape[0]        for p in predictions)
+    n_targets   = len(predictions)
 
-    results = np.full((n_targets, batch_size, k, max_partons),
+    results = np.full((n_targets, batch_size, max_partons, k),
                       -1, dtype=np.int64)
     weights = np.full((n_targets, batch_size, k),
                       -np.float32(np.inf), dtype=np.float32)
 
     work_preds = [p.astype(np.float32, copy=True) for p in predictions]
 
-    for top_idx in range(k):
+    for cand_idx in range(k):
         flat_pred_list = numba.typed.List(
             [p.reshape((p.shape[0], -1)) for p in work_preds]
         )
@@ -265,21 +288,31 @@ def extract_predictions(predictions: List[TArray], k: int):
             flat_pred_list, num_partons, max_jets, batch_size
         )
 
-        # store one assignment set at position top_idx
-        results[:, :, :, top_idx] = assign
-        weights[:, :,  top_idx]   = score
+        results[:, :, :, cand_idx] = assign          # k_local lives last
+        weights[:, :,  cand_idx]   = score
 
-        # mask out the jets that were just used
-        for t in range(n_targets):                # target
-            for b in range(batch_size):           # batch
-                for p_idx in range(num_partons[t]):   # parton
-                    jet = int(assign[t, b, p_idx])
-                    if jet >= 0:
-                        for s in range(n_targets):     # mask in all targets
-                            mask_jet(work_preds[s][b].ravel(),
-                                     num_partons[s], max_jets,
-                                     jet, -np.float32(np.inf))
+        for t in range(n_targets):
+            for b in range(batch_size):
+                for p_idx in range(num_partons[t]):
+                    jet_idx = int(assign[t, b, p_idx])
+                    if jet_idx >= 0:
+                        for s in range(n_targets):
+                            mask_jet(
+                                work_preds[s][b].ravel(),
+                                num_partons[s], max_jets,
+                                jet_idx, -np.float32(np.inf),
+                            )
 
-    # return: list length = n_targets;
-    # each item is (batch_size, k, partons_for_this_target)
-    return [res[:, :partons, :].swapaxes(1, 2) for res, partons in zip(results, num_partons)]
+    final_results = np.full_like(results)
+    for b in range(batch_size):
+        comb, _ = _k_best_combinations(weights[:, b, :], k)   # (k, n_targets)
+
+        # 2. write them out
+        for rank, choice in enumerate(comb):                   # choice is tuple
+            for t in range(n_targets):
+                final_results[t, b, :, rank] = results[t, b, :, choice[t]]
+
+    return [
+        final_results[t, :, :num_partons[t], :].transpose(0, 2, 1)
+        for t in range(n_targets)
+    ]
