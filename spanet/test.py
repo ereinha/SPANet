@@ -272,9 +272,6 @@ if __name__ == '__main__':
     parser.add_argument("-g", "--gpu", action="store_true",
                         help="Evaluate network on the gpu.")
 
-    parser.add_argument("-fp16", "--fp16", action="store_true",
-                        help="Use Automatic Mixed Precision for inference.")
-
     parser.add_argument("-tex", "--latex", action="store_true",
                         help="Output a latex table.")
     
