@@ -245,7 +245,7 @@ def find_max_and_mask(matrix):
 
 
 def _k_best_combinations(logw: np.ndarray, k: int):
-    n_targets, k_local = logw.shape
+    n_targets, _ = logw.shape
 
     score = logw[0].copy()
     for t in range(1, n_targets):
@@ -307,8 +307,7 @@ def extract_predictions(predictions: List[TArray], k: int):
     for b in range(batch_size):
         comb, _ = _k_best_combinations(weights[:, b, :], k)   # (k, n_targets)
 
-        # 2. write them out
-        for rank, choice in enumerate(comb):                   # choice is tuple
+        for rank, choice in enumerate(comb):
             for t in range(n_targets):
                 final_results[t, b, :, rank] = results[t, b, :, choice[t]]
 
