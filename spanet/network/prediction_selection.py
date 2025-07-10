@@ -226,92 +226,34 @@ def _extract_predictions(predictions, num_partons, max_jets, batch_size):
 
 def find_max_and_mask(matrix):
     new_matrix = matrix.copy()
-    # Find the index of the maximum value
-    index = np.argmax(new_matrix)
-    
-    # Convert the flat index back to 3D indices
-    indices = np.unravel_index(index, new_matrix.shape)
- 
-    # Replace the found value with 999
-    new_matrix[indices] = 999
-    
-    # Handle the i-j swap symmetry
-    i, j, k = indices
-    symmetric_index = (j, i, k)
-    new_matrix[symmetric_index] = 999
+    B = new_matrix.shape[0]
 
-    
-    return new_matrix, i, j, k
+    flat_idx = new_matrix.reshape(B, -1).argmax(axis=1)
 
+    l, m, n = np.unravel_index(flat_idx, new_matrix.shape[1:])
 
-def _k_best_combinations(logw: np.ndarray, k: int):
-    n_targets, _ = logw.shape
+    new_matrix[np.arange(B), l, m, n] = -np.inf
+    new_matrix[np.arange(B), m, l, n] = -np.inf
 
-    score = logw[0].copy()
-    for t in range(1, n_targets):
-        score = score[..., None] + logw[t]
-
-    flat = score.ravel()
-    if flat.size <= k:
-        best_idx_flat = np.arange(flat.size)
-    else:
-        best_idx_flat = np.argpartition(-flat, k-1)[:k]
-
-    best_idx_flat = best_idx_flat[np.argsort(-flat[best_idx_flat])]
-    best_scores   = flat[best_idx_flat]
-    best_tuples   = np.column_stack(
-        np.unravel_index(best_idx_flat, score.shape)
-    )
-
-    return best_tuples, best_scores
-
+    return new_matrix
 
 def extract_predictions(predictions: List[TArray], k: int):
-    num_partons = np.array([p.ndim - 1 for p in predictions], dtype=np.int64)
-    max_partons = num_partons.max()
-    max_jets    = max(max(p.shape[1:]) for p in predictions)
-    batch_size  = max(p.shape[0]        for p in predictions)
-    n_targets   = len(predictions)
+    num_partons = np.array([len(p.shape) - 1 for p in predictions])
+    max_jets = max(max(p.shape[1:]) for p in predictions)
+    batch_size = max(p.shape[0] for p in predictions)
 
-    results = np.full((n_targets, batch_size, max_partons, k),
-                      -1, dtype=np.int64)
-    weights = np.full((n_targets, batch_size, k),
-                      -np.float32(np.inf), dtype=np.float32)
+    targets = len(predictions)
+    top_k = k
+    max_partons = np.max(num_partons)
+    results = np.zeros((targets, batch_size, max_partons, targets * top_k))
+    predictions = np.array(predictions)
 
-    work_preds = [p.astype(np.float32, copy=True) for p in predictions]
+    for t in range(targets):
+        temp_predictions = predictions.copy()
+        for k in range(top_k):
+            temp_predictions_list = numba.typed.List([p.reshape((p.shape[0], -1)) for p in temp_predictions])
+            result, _ = _extract_predictions(temp_predictions_list, num_partons, max_jets, batch_size)
+            temp_predictions[t] = find_max_and_mask(temp_predictions[t])
+            results[:,:,:,k*t+k] = result.copy()
 
-    for cand_idx in range(k):
-        flat_pred_list = numba.typed.List(
-            [p.reshape((p.shape[0], -1)) for p in work_preds]
-        )
-        assign, score = _extract_predictions(
-            flat_pred_list, num_partons, max_jets, batch_size
-        )
-
-        results[:, :, :, cand_idx] = assign          # k_local lives last
-        weights[:, :,  cand_idx]   = score
-
-        for t in range(n_targets):
-            for b in range(batch_size):
-                for p_idx in range(num_partons[t]):
-                    jet_idx = int(assign[t, b, p_idx])
-                    if jet_idx >= 0:
-                        for s in range(n_targets):
-                            mask_jet(
-                                work_preds[s][b].ravel(),
-                                num_partons[s], max_jets,
-                                jet_idx, -np.float32(np.inf),
-                            )
-
-    final_results = np.full_like(results)
-    for b in range(batch_size):
-        comb, _ = _k_best_combinations(weights[:, b, :], k)   # (k, n_targets)
-
-        for rank, choice in enumerate(comb):
-            for t in range(n_targets):
-                final_results[t, b, :, rank] = results[t, b, :, choice[t]]
-
-    return [
-        final_results[t, :, :num_partons[t], :].transpose(0, 2, 1)
-        for t in range(n_targets)
-    ]
+    return [top_k_results[:, :partons, :] for top_k_results, partons in zip(results, num_partons)]
