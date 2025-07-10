@@ -243,17 +243,19 @@ def extract_predictions(predictions: List[TArray], k: int):
     batch_size = max(p.shape[0] for p in predictions)
 
     targets = len(predictions)
-    top_k = k
+    top_k = k - 1
     max_partons = np.max(num_partons)
-    results = np.zeros((targets, batch_size, max_partons, targets * top_k))
+    results = np.zeros((targets, batch_size, max_partons, targets * top_k + 1))
     predictions = np.array(predictions)
 
+    result, _ = _extract_predictions(predictions, num_partons, max_jets, batch_size)
+    results[:,:,:,-1] = result.copy()
     for t in range(targets):
         temp_predictions = predictions.copy()
         for k in range(top_k):
+            temp_predictions[t] = find_max_and_mask(temp_predictions[t])
             temp_predictions_list = numba.typed.List([p.reshape((p.shape[0], -1)) for p in temp_predictions])
             result, _ = _extract_predictions(temp_predictions_list, num_partons, max_jets, batch_size)
-            temp_predictions[t] = find_max_and_mask(temp_predictions[t])
-            results[:,:,:,k*t+k] = result.copy()
+            results[:,:,:,top_k*t+k] = result.copy()
 
     return [top_k_results[:, :partons, :] for top_k_results, partons in zip(results, num_partons)]
