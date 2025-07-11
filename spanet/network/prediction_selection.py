@@ -248,7 +248,8 @@ def extract_predictions(predictions: List[TArray], k: int):
     results = np.zeros((targets, batch_size, max_partons, targets * top_k + 1))
     predictions = np.array(predictions)
 
-    result, _ = _extract_predictions(predictions, num_partons, max_jets, batch_size)
+    tp_list = numba.typed.List([p.reshape((p.shape[0], -1)) for p in predictions])
+    result, _ = _extract_predictions(tp_list, num_partons, max_jets, batch_size)
     results[:,:,:,-1] = result.copy()
     for t in range(targets):
         temp_predictions = predictions.copy()
